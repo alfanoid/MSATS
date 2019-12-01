@@ -1,6 +1,7 @@
 using StanMiscLib;
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Data;
 using System.Diagnostics;
 using System.IO;
@@ -15,6 +16,11 @@ class MSATS_loader
 {
  
   public static string programName = Path.GetFileName(System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName);
+
+  private static Dictionary<string, string> Reports = new Dictionary<string, string>()
+  {
+    {"Level2SettlementReconciliation", "SettlementCase,TransmissionNodeIdentifier,LR,MDP"}
+  };
 
   static void Main(string[] args)
   {
@@ -59,7 +65,7 @@ class MSATS_loader
 
 public static void ProcessFile(string fileName) 
 {
-  Console.WriteLine("Processed file '{0}'.", fileName);     
+  Console.WriteLine("====== {0} - Processing file '{1}'", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"), fileName);     
   switch (Path.GetExtension(fileName).ToLower())
   {
     case ".xml":
@@ -71,10 +77,11 @@ public static void ProcessFile(string fileName)
          ProcessZipFile(ZipFile.OpenRead(fileName));
          break;
   }
+  Console.WriteLine("****** {0} - Completed file '{1}'", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"), fileName);
 }
 
 
-public static Hashtable ProcessHeader(XmlReader Xml, Hashtable IpIp) 
+public static Dictionary<string, string> ProcessHeader(XmlReader Xml, Dictionary<string, string> IpIp) 
 {
   string Key = "";
   string Val = "";
@@ -101,13 +108,12 @@ public static Hashtable ProcessHeader(XmlReader Xml, Hashtable IpIp)
 }
 
 
-public static void ProcessTransaction(XmlReader Xml, Hashtable Common) 
+public static void ProcessTransaction(XmlReader Xml, Dictionary<string, string> Common) 
 {
-  Hashtable Transaction = new Hashtable();
+  Dictionary<string, string> Transaction = new Dictionary<string, string>();
 
   if (Xml.MoveToFirstAttribute())
   {
-    StanMisc.Debug("Attr:", 7);
     do
     {
       if ( Xml.Name == "transactionDate" )
@@ -122,11 +128,37 @@ public static void ProcessTransaction(XmlReader Xml, Hashtable Common)
     switch (Xml.Name)
     {
       case "ReportResponse":
+            if ( Xml.NodeType == XmlNodeType.EndElement )
+              break;
+
+            // Hold Transaction values for later use.
+            Transaction.Add("Type", Xml.Name);
             StanMisc.Debug(string.Format("ReportResponse:{0}:{1}", Xml.Name, Xml.Value), 9);
+            Xml.MoveToAttribute("version");
+            Transaction.Add("version", Xml.Value.Replace("r",""));
+            StanMisc.Debug(string.Format("Version:{0}", Transaction["version"]), 9);
+
+            Dictionary<string, string> Report = new Dictionary<string, string>();
+
+            // Get Report values for later use.
+            Xml.ReadToFollowing("ReportParameters");
+            while (Xml.Read() && ! (Xml.NodeType == XmlNodeType.EndElement && Xml.Name == "ReportParameters"))
+            {
+              if ( Xml.NodeType == XmlNodeType.Element )
+              {
+                string Key = Xml.Name;
+                Xml.Read();
+               // StanMisc.Debug(string.Format("{0}:{1}", Xml.Name, Xml.Value), 9);
+                Report.Add(Key, Xml.Value);
+              }
+            }
+  StanMisc_DumpDict("Transaction", Transaction, 9);
+  StanMisc_DumpDict("Report", Report, 9);
+            StanMisc.Exit();
             break;
     }
   }
-  StanMisc_DumpHash("Transaction", Transaction, 9);
+  StanMisc_DumpDict("Transaction", Transaction, 9);
 }
 
 
@@ -150,7 +182,7 @@ public static void ProcessXml1(Stream xmlStream)
 
 public static void ProcessXml(Stream xmlStream) 
 {
-  Hashtable Common = new Hashtable();
+  Dictionary<string, string> Common = new Dictionary<string, string>();
                   
   XmlReaderSettings xSettings = new XmlReaderSettings();
   xSettings.IgnoreWhitespace = true;
@@ -162,23 +194,21 @@ public static void ProcessXml(Stream xmlStream)
     switch (xReader.NodeType)
     {
       case XmlNodeType.Element:
+           StanMisc.Debug(string.Format("XML Element:{0}:{1}", xReader.Name, xReader.Value), 11);
            switch (xReader.Name)
            {
              case "ase:aseXML":
-                  StanMisc.Debug(string.Format("Common:{0}:{1}", xReader.Name, xReader.Value), 11);
-
                   xReader.MoveToAttribute("xmlns:ase");
                   Common.Add("aseXML", xReader.Value.Replace("urn:aseXML:r",""));
                   break;
 
              case "Header":
                   Common = ProcessHeader(xReader, Common);
-                  StanMisc_DumpHash("Common", Common, 9);
+                  StanMisc_DumpDict("Common", Common, 9);
                   break;
 
              case "Transaction":
                   ProcessTransaction(xReader, Common);
-                  StanMisc.Exit();
                   break;
            }
            break;
@@ -224,15 +254,14 @@ public static void ProcessXmlGood(Stream xmlStream)
 
 public static void ProcessZipFile(ZipArchive Zip) 
 {
-//  using (ZipArchive zip = ZipFile.OpenRead(zipFile))
-//  {
     foreach (ZipArchiveEntry file in Zip.Entries)
     {
-      StanMisc.Debug(file.FullName,9);
+      StanMisc.Debug(string.Format("====== {0} - Processing file '{1}'", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"), file.FullName), 10, "in");
       if (file.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
       {
         ProcessXml(file.Open());
       }
+      StanMisc.Debug(string.Format("****** {0} - Completed file '{1}'", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"), file.FullName), 10, "un");
     }
  // }
 }
@@ -240,11 +269,11 @@ public static void ProcessZipFile(ZipArchive Zip)
 
 // Common Functions
 
-public static void StanMisc_DumpHash(string HashName, Hashtable ipip, int DbgLvl = 1)
+public static void StanMisc_DumpDict(string DictName, Dictionary<string, string> ipip, int DbgLvl = 1)
 {
   foreach( string s in ipip.Keys)
   {
-    StanMisc.Debug("(" + HashName + ") " + s + '=' + ipip[s], DbgLvl);
+    StanMisc.Debug("(" + DictName + ") " + s + '=' + ipip[s], DbgLvl);
   }
 }
 
@@ -313,11 +342,11 @@ public static void StanDB_DBFetch(OracleConnection DBCon)
 
       while (OraComRead.Read())
       {
-        Hashtable MANTPROData = new Hashtable();
+        Dictionary<string, string> MANTPROData = new Dictionary<string, string>();
         OraComRead.GetValues(rowValues);
         for (var keyValueCounter = 0; keyValueCounter < rowValues.Length; keyValueCounter++)
         {
-          MANTPROData.Add(OraComRead.GetName(keyValueCounter), rowValues[keyValueCounter]);
+          //MANTPROData.Add(OraComRead.GetName(keyValueCounter), rowValues[keyValueCounter]);
         }
         foreach( string s in MANTPROData.Keys)
         {
