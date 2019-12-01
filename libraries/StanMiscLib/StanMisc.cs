@@ -7,6 +7,7 @@ using System.Text;
 namespace StanMiscLib
 {
   public class StanMisc
+
   {
     public static int GlobalDebugLevel = 0; 
 
@@ -22,12 +23,20 @@ namespace StanMiscLib
       GlobalDebugLevel = DebugLevel;
     }
 
-    public static void Debug(string Message, int DbgLvl)
+    public static void Debug(string Message, int DbgLvl, string Indent = "")
     {
       if ( DbgLvl <= GlobalDebugLevel )
       {
         StackFrame callStack = new StackFrame(1, true);
+
+        if ( Indent.ToLower() == "un" )
+            Trace.Unindent();
+
         Trace.WriteLine( "Debug(" + callStack.GetFileLineNumber() + "):" + Message );
+
+        if ( Indent.ToLower() == "in" ) 
+            Trace.Indent();
+
       }
     }
 
