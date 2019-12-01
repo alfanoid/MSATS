@@ -1,4 +1,4 @@
-using StanMisc;
+using StanMiscLib;
 using System;
 using System.Collections;
 using System.Data;
@@ -48,7 +48,7 @@ class MSATS_loader
     string [] fileEntries = Directory.GetFiles(dataDirectory);
 
     
-    OracleConnection MANTPRO =  StanDB_DBOpen("mantpro");
+//    OracleConnection MANTPRO =  StanDB_DBOpen("mantpro");
 
     foreach(string fileName in fileEntries)
       ProcessFile(fileName);
