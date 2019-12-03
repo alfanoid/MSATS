@@ -8,6 +8,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 using System.Xml;
+using Microsoft.VisualBasic.FileIO;
 
 using Oracle.ManagedDataAccess.Client;
 using Oracle.ManagedDataAccess.Types;
@@ -65,6 +66,7 @@ class MSATS_loader
 
 public static void ProcessFile(string fileName) 
 {
+  StanMisc.Debug("ProcessFile",11);
   Console.WriteLine("====== {0} - Processing file '{1}'", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"), fileName);     
   switch (Path.GetExtension(fileName).ToLower())
   {
@@ -83,6 +85,8 @@ public static void ProcessFile(string fileName)
 
 public static Dictionary<string, string> ProcessHeader(XmlReader Xml, Dictionary<string, string> IpIp) 
 {
+  StanMisc.Debug("ProcessHeader", 11);
+
   string Key = "";
   string Val = "";
 
@@ -98,7 +102,6 @@ public static Dictionary<string, string> ProcessHeader(XmlReader Xml, Dictionary
       else
         Val = Xml.Value;
 
-      StanMisc.Debug(string.Format("Common:{0}:{1}", Key, Val), 11);
       IpIp.Add(Key, Val);
     }
     if ( Xml.NodeType == XmlNodeType.EndElement && Xml.Name == "Header" )
@@ -110,6 +113,8 @@ public static Dictionary<string, string> ProcessHeader(XmlReader Xml, Dictionary
 
 public static void ProcessTransaction(XmlReader Xml, Dictionary<string, string> Common) 
 {
+  StanMisc.Debug("ProcessTransaction", 11);
+
   Dictionary<string, string> Transaction = new Dictionary<string, string>();
 
   if (Xml.MoveToFirstAttribute())
@@ -125,6 +130,7 @@ public static void ProcessTransaction(XmlReader Xml, Dictionary<string, string> 
 
   while (Xml.Read() && ! (Xml.NodeType == XmlNodeType.EndElement && Xml.Name == "Transaction"))
   {
+    StanMisc.Debug("Element:" + Xml.Name, 11);
     switch (Xml.Name)
     {
       case "ReportResponse":
@@ -133,32 +139,72 @@ public static void ProcessTransaction(XmlReader Xml, Dictionary<string, string> 
 
             // Hold Transaction values for later use.
             Transaction.Add("Type", Xml.Name);
-            StanMisc.Debug(string.Format("ReportResponse:{0}:{1}", Xml.Name, Xml.Value), 9);
+
             Xml.MoveToAttribute("version");
             Transaction.Add("version", Xml.Value.Replace("r",""));
-            StanMisc.Debug(string.Format("Version:{0}", Transaction["version"]), 9);
 
             Dictionary<string, string> Report = new Dictionary<string, string>();
 
             // Get Report values for later use.
             Xml.ReadToFollowing("ReportParameters");
+
             while (Xml.Read() && ! (Xml.NodeType == XmlNodeType.EndElement && Xml.Name == "ReportParameters"))
             {
               if ( Xml.NodeType == XmlNodeType.Element )
               {
                 string Key = Xml.Name;
                 Xml.Read();
-               // StanMisc.Debug(string.Format("{0}:{1}", Xml.Name, Xml.Value), 9);
                 Report.Add(Key, Xml.Value);
               }
             }
-  StanMisc_DumpDict("Transaction", Transaction, 9);
-  StanMisc_DumpDict("Report", Report, 9);
-            StanMisc.Exit();
+
+            switch (Report["ReportName"])
+            {
+              case "Level1SettlementReconciliation":
+              case "Level2SettlementReconciliation":
+              case "Level3SettlementReconciliation":
+                   Xml.ReadToFollowing("CSVData");
+                   Xml.Read();
+
+                   StanMisc.Debug("CSVData:" + Xml.Value + ":", 9);
+
+                   if (Xml.Value == "" )
+                     break;
+
+                   StringReader StrReader = new StringReader(Xml.Value);
+                   using (TextFieldParser csvParser = new TextFieldParser(StrReader))
+                   {
+//                     csvParser.CommentTokens = new string[] { "#" };
+//                     csvParser.TextFieldType = FieldType.Delimited;
+                     csvParser.SetDelimiters( "," );
+//                     csvParser.HasFieldsEnclosedInQuotes = true;
+
+                     string[] ColumnNames = csvParser.ReadFields();
+
+                     foreach(string ColName in ColumnNames)
+                       Console.Write(ColName + ",");
+                     Console.WriteLine();
+
+                     while (!csvParser.EndOfData)
+                     {
+                       // Read current line fields, pointer moves to the next line.
+                       string[] ColumnVals = csvParser.ReadFields();
+
+                       foreach(string ColVal in ColumnVals)
+                         Console.Write(ColVal + ",");
+                       Console.WriteLine();
+                     }
+//                     StanMisc.Exit();
+                   }
+                   StanMisc_DumpDict("Transaction", Transaction, 9);
+                   StanMisc_DumpDict("Report", Report, 9);
+                   break;
+            }
+
             break;
     }
   }
-  StanMisc_DumpDict("Transaction", Transaction, 9);
+//            StanMisc.Exit();
 }
 
 
@@ -182,6 +228,8 @@ public static void ProcessXml1(Stream xmlStream)
 
 public static void ProcessXml(Stream xmlStream) 
 {
+  StanMisc.Debug("ProcessXml", 11);
+
   Dictionary<string, string> Common = new Dictionary<string, string>();
                   
   XmlReaderSettings xSettings = new XmlReaderSettings();
@@ -194,7 +242,6 @@ public static void ProcessXml(Stream xmlStream)
     switch (xReader.NodeType)
     {
       case XmlNodeType.Element:
-           StanMisc.Debug(string.Format("XML Element:{0}:{1}", xReader.Name, xReader.Value), 11);
            switch (xReader.Name)
            {
              case "ase:aseXML":
@@ -254,16 +301,16 @@ public static void ProcessXmlGood(Stream xmlStream)
 
 public static void ProcessZipFile(ZipArchive Zip) 
 {
-    foreach (ZipArchiveEntry file in Zip.Entries)
+  StanMisc.Debug("ProcessZipFile", 11);
+  foreach (ZipArchiveEntry file in Zip.Entries)
+  {
+    StanMisc.Debug(string.Format("====== {0} - Processing file '{1}'", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"), file.FullName), 10, "in");
+    if (file.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
     {
-      StanMisc.Debug(string.Format("====== {0} - Processing file '{1}'", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"), file.FullName), 10, "in");
-      if (file.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
-      {
-        ProcessXml(file.Open());
-      }
-      StanMisc.Debug(string.Format("****** {0} - Completed file '{1}'", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"), file.FullName), 10, "un");
+      ProcessXml(file.Open());
     }
- // }
+    StanMisc.Debug(string.Format("****** {0} - Completed file '{1}'", DateTime.Now.ToString("yyyy/MM/dd HH:mm:ss"), file.FullName), 10, "un");
+  }
 }
 
 
